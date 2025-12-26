@@ -1,0 +1,47 @@
+name: Update Stable Branch
+
+# 必须设置权限：允许 GITHUB_TOKEN 修改仓库内容
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 每天 UTC 0点运行
+  workflow_dispatch:    # 允许手动触发
+
+jobs:
+  sync-stable:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 查找上游 (noctalia-dev) 最新的 Tag
+      - name: Find latest tag
+        id: upstream_tag
+        uses: oprypin/find-latest-tag@v1
+        with:
+          repository: noctalia-dev/noctalia-shell
+          releases-only: false  # 扫描所有 Tag，防止遗漏
+          
+      # 2. 检出上游对应 Tag 的代码
+      - name: Checkout upstream source
+        uses: actions/checkout@v4
+        with:
+          repository: noctalia-dev/noctalia-shell
+          ref: ${{ steps.upstream_tag.outputs.tag }} # 使用找到的 Tag
+          fetch-depth: 0 # 获取完整历史，保证 push 时的兼容性
+
+      # 3. 推送到你的仓库 (dindin12138/noctalia-shell)
+      - name: Push to stable branch
+        # 【关键】将 Token 放入环境变量，避免直接出现在命令字符串中
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_REPO: dindin12138/noctalia-shell
+        run: |
+          # 动态构建带认证的 URL（Token 会被 GitHub Actions 自动脱敏，日志中显示为 ***）
+          REMOTE_URL="https://x-access-token:$TOKEN@github.com/$TARGET_REPO.git"
+          
+          # 添加远程仓库地址
+          git remote add target_repo "$REMOTE_URL"
+          
+          # 强制推送当前代码 (HEAD) 到 stable 分支
+          echo "Pushing version ${{ steps.upstream_tag.outputs.tag }} to stable..."
+          git push target_repo HEAD:stable --force
